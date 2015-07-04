@@ -499,16 +499,21 @@ class ConferenceApi(remote.Service):
 
         Session(**data).put()
 
+        #Add task
+        taskqueue.add(params={'speaker': data['speaker'], 'websafeConferenceKey':
+            request.websafeConferenceKey}, url='tasks/set_feature_session_announcement')
+
         # check if speaker exists in other sections; if so, add to memcache
-        sessions = Session.query(Session.speaker == data['speaker'],
-            ancestor=p_key)
-        if len(list(sessions)) > 1:
-            cache_data = {}
-            cache_data['speaker'] = data['speaker']
-            # cache_data['sessions'] = sessions # TODO: get pickler to load full properties...
-            cache_data['sessionNames'] = [session.name for session in sessions]
-            if not memcache.set('featured_speaker', cache_data):
-                logging.error('Memcache set failed.')
+        # OLD CODE (without task)
+        # sessions = Session.query(Session.speaker == data['speaker'],
+        #     ancestor=p_key)
+        # if len(list(sessions)) > 1:
+        #     cache_data = {}
+        #     cache_data['speaker'] = data['speaker']
+        #     # cache_data['sessions'] = sessions # TODO: get pickler to load full properties...
+        #     cache_data['sessionNames'] = [session.name for session in sessions]
+        #     if not memcache.set('featured_speaker', cache_data):
+        #         logging.error('Memcache set failed.')
 
         return request
 
@@ -754,6 +759,25 @@ class ConferenceApi(remote.Service):
 
 
 # - - - Announcements - - - - - - - - - - - - - - - - - - - -
+    @staticmethod
+    def _cacheFeaturesSpeaker(speaker, websafeConferenceKey):
+        """
+        Cache featured speaker.When a new session is added to a conference, check the speaker.
+        If there is more than one session by this speaker at this conference,
+        also add a new Memcache entry that features the speaker and session names.
+        """
+        conf = ndb.Key(urlsafe=websafeConferenceKey).get()
+        if not conf:
+            raise endpoints.NotFoundException('No conference found with key: %s' % websafeConferenceKey)
+        sessions  = Session.query(ancestor=conf.key).filter(Session.speaker==speaker).fetch()
+        if len(list(sessions)) > 1:
+            cache_data = {}
+            cache_data['speaker'] = speaker
+            cache_data['sessionNames'] = [session.name for session in sessions]
+            if not memcache.set('featured_speaker', cache_data):
+                logging.error('Memcache set failed.')
+
+
 
     @staticmethod
     def _cacheAnnouncement():
